@@ -1,0 +1,19 @@
+{
+    "name": "twitter-to-nostr",
+    "version": "1.0.0",
+    "description": "A Node.js bot that republishes tweets from Twitter influencers to Nostr as kind:1 notes.",
+    "main": "index.js",
+    "scripts": {
+      "start": "node index.js"
+    },
+    "author": "Zhong",
+    "license": "MIT",
+    "dependencies": {
+      "cron": "^2.3.0",
+      "node-cron": "^3.0.2",
+      "node-fetch": "^2.6.7",
+      "nostr-tools": "^1.13.0",
+      "ws": "^8.13.0"
+    }
+  }
+  
