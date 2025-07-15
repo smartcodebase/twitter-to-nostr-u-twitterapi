@@ -126,9 +126,6 @@ async function runBot() {
   ); // Shuffle the tweets
   console.log(sorted.length);
 
-   console.log(" tweet from Apify 💖💖💖💖💖💖💖💖");
-    fs.appendFileSync(My_LOG_FILE, JSON.stringify(tweets, null, 2) + "\n");
-
   for (const tweet of sorted) {
     // if(tweet?.isReply || tweet?.retweeted_tweet || tweet?.isQuote || tweet?.lang !== 'en' || tweet?.extendedEntities?.media?.length > 0 || tweet?.card) {
     if (
