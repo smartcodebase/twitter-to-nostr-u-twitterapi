@@ -1,61 +1,16 @@
 const fetch = require("node-fetch");
-const { INFLUENCERS, TWITTER_API_KEY, TWITTER_API__URL } = require("./config");
+const { INFLUENCERS } = require("./config");
 const { getLatestTime, maybeUpdateLatestTime } = require("./latest-time-store");
 
+const API_KEY = "8cabc448c25947318fd6115939a9282d";
+const BASE_URL = "https://api.twitterapi.io/twitter/tweet/advanced_search";
+
 function toTwitterUTCFormat(date) {
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = (n) => String(n).padStart(2, "0");
   return (
     `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}_` +
     `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}_UTC`
   );
-}
-
-async function fetchAllTweets(influencer, since, i) {
-  const tweets = [];
-  let hasNextPage = true;
-  let nextCursor = null;
-
-  while (hasNextPage) {
-    const baseParams = `queryType=Latest&query=${encodeURIComponent(`from:${influencer} since:${since}`)}`
-    + (nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : "");
-
-    const url = `${TWITTER_API__URL}?${baseParams}`;
-    console.log(`🔁 [${i + 1}] Fetching page → ${url}`);
-
-    try {
-      const res = await fetch(url, {
-        method: "GET",
-        headers: {
-          "X-API-Key": TWITTER_API_KEY,
-        },
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        console.warn(`⚠️ [${i + 1}] HTTP ${res.status} for ${influencer}: ${json?.message || "Unknown error"}`);
-        break;
-      }
-
-      
-      if (!Array.isArray(json.tweets)) {
-        console.warn(`⚠️ [${i + 1}] Unexpected format for ${influencer}`);
-        break;
-      }
-        
-      maybeUpdateLatestTime(influencer);
-
-      tweets.push(...json.tweets);
-
-      hasNextPage = json.has_next_page;
-      nextCursor = json.next_cursor;
-    } catch (err) {
-      console.error(`❌ [${i + 1}] Error for ${influencer}:`, err.message);
-      break;
-    }
-  }
-
-  return tweets;
 }
 
 async function fetchTweetsFromTwitterAPI(concurrency = 5) {
@@ -91,14 +46,38 @@ async function fetchTweetsFromTwitterAPI(concurrency = 5) {
 
   const tasks = INFLUENCERS.map((influencer, i) => async () => {
     try {
-
       const now = new Date();
       const lastFetched = getLatestTime(influencer) || new Date(now.getTime() - 60 * 60 * 1000);
       const since = toTwitterUTCFormat(lastFetched);
+      const query = `from:${influencer} since:${since}`;
+      const url = `${BASE_URL}?queryType=Latest&query=${encodeURIComponent(query)}`;
 
-      const tweets = await fetchAllTweets(influencer, since, i);
+      console.log(`🔍 [${i + 1}] Fetching: ${url}`);
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "X-API-Key": API_KEY,
+        },
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        console.warn(`⚠️ [${i + 1}] HTTP ${res.status} for ${influencer}: ${json?.message || "Unknown error"}`);
+        return [];
+      }
+
+      if (!Array.isArray(json.tweets)) {
+        console.warn(`⚠️ [${i + 1}] Invalid format: no tweets[] returned for ${influencer}`);
+        return [];
+      }
+
+      const tweets = json.tweets;
+
+      maybeUpdateLatestTime(influencer);
+
       console.log(`✅ [${i + 1}] Got ${tweets.length} tweets for ${influencer}`);
-
       return tweets;
     } catch (err) {
       console.error(`❌ [${i + 1}] Error for ${influencer}:`, err.message);

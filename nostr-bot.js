@@ -13,7 +13,8 @@ global.WebSocket = WebSocket;
 
 let isJobRunning = false;
 
-const My_LOG_FILE = path.join(__dirname, "rcm_logs/my-log.json");
+const today = new Date().toISOString().slice(0, 10);
+const My_LOG_FILE = path.join(__dirname, `rcm_logs/log-${today}.json`);
 if (!fs.existsSync("rcm_logs")) fs.mkdirSync("rcm_logs");
 if (!fs.existsSync(My_LOG_FILE)) fs.writeFileSync(My_LOG_FILE, "");
 
@@ -43,7 +44,7 @@ async function publishToRelay(event) {
       relay.on("connect", async () => {
         console.log(`🔌 Connected to ${RELAY_URL}`);
         await relay.publish(event);
-        console.log(`🚀 Published: ${event.content.slice(0, 10)}...`);
+        console.log(`🚀 Published: ${event.content.slice(0, 40)}...`);
         setTimeout(() => {
           relay.close();
           resolve();
@@ -113,7 +114,7 @@ function buildNostrNote(tweet, nostrAccount) {
 async function runBot() {
   if (isJobRunning) {
     console.log("🔴 Job already running. Skipping...");
-    return; // Don't run if the previous job is still in progress
+    return;
   }
 
   isJobRunning = true;
