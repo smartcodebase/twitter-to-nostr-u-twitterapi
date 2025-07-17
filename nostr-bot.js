@@ -1,10 +1,12 @@
-const { relayInit, getEventHash, getSignature } = require("nostr-tools");
+const { getEventHash, getSignature } = require("nostr-tools");
 const { fetchTweetsFromTwitterAPI } = require("./twitterapi-fetcher");
 const {
   createNostrAccount,
   publishProfileIfNotExists,
+  publishToRelay,
+  buildNostrNote
 } = require("./nostr-utils");
-const { RELAY_URL, INFLUENCERS } = require("./config");
+const { RELAY_URL, VERSION } = require("./config");
 const WebSocket = require("ws");
 const fs = require("fs");
 const path = require("path");
@@ -14,101 +16,30 @@ global.WebSocket = WebSocket;
 let isJobRunning = false;
 
 const today = new Date().toISOString().slice(0, 10);
-const My_LOG_FILE = path.join(__dirname, `rcm_logs/log-${today}.json`);
-if (!fs.existsSync("rcm_logs")) fs.mkdirSync("rcm_logs");
-if (!fs.existsSync(My_LOG_FILE)) fs.writeFileSync(My_LOG_FILE, "");
+const TWEETS_LOG_FILE = path.join(__dirname, `tweet_logs/log-${today}.json`);
+if (!fs.existsSync("tweet_logs")) fs.mkdirSync("tweet_logs");
+if (!fs.existsSync(TWEETS_LOG_FILE)) fs.writeFileSync(TWEETS_LOG_FILE, "");
 
 const LOG_FILE = path.join(__dirname, "logs/posted-log.json");
 if (!fs.existsSync("logs")) fs.mkdirSync("logs");
 if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, "[]");
 
 function loadPostedLog() {
-  return new Set(JSON.parse(fs.readFileSync(LOG_FILE)));
-}
-
-function savePostedLog(postedIds) {
-  fs.writeFileSync(LOG_FILE, JSON.stringify([...postedIds], null, 2));
-}
-
-async function publishToRelay(event) {
-  const relay = relayInit(RELAY_URL);
-  return new Promise(async (resolve, reject) => {
-    try {
-      await relay.connect();
-
-      relay.on("error", (err) => {
-        console.error("❌ Relay connection failed:", err.message);
-        reject(err);
-      });
-
-      relay.on("connect", async () => {
-        console.log(`🔌 Connected to ${RELAY_URL}`);
-        await relay.publish(event);
-        console.log(`🚀 Published: ${event.content.slice(0, 40)}...`);
-        setTimeout(() => {
-          relay.close();
-          resolve();
-        }, 1500);
-      });
-
-      setTimeout(() => {
-        relay.close();
-        reject(new Error("Timeout"));
-      }, 5000);
-    } catch (e) {
-      console.error("❌ Unexpected error:", e);
-      reject(e);
+  try {
+    const raw = JSON.parse(fs.readFileSync(LOG_FILE));
+    const map = new Map();
+    for (const entry of raw) {
+      if (entry?.tweetId) map.set(entry.tweetId, entry);
     }
-  });
-}
-
-function buildNostrNote(tweet, nostrAccount) {
-  const tweetTimestamp = Math.floor(new Date(tweet.createdAt).getTime() / 1000);
-  const now = Math.floor(Date.now() / 1000);
-  let mediaUrl = null;
-  if (
-    tweet.extendedEntities &&
-    Array.isArray(tweet.extendedEntities.media) &&
-    tweet.extendedEntities.media.length > 0
-  ) {
-    const media = tweet.extendedEntities.media[0];
-
-    if (media.type === "photo" && media.media_url_https) {
-      mediaUrl = media.media_url_https;
-    }
-
-    if (
-      (media.type === "video" || media.type === "animated_gif") &&
-      media.video_info &&
-      Array.isArray(media.video_info.variants)
-    ) {
-      const mp4 = media.video_info.variants
-        .filter((v) => v.content_type === "video/mp4")
-        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-      if (mp4?.url) {
-        mediaUrl = mp4.url;
-      }
-    }
+    return map;
+  } catch (e) {
+    return new Map();
   }
+}
 
-  const content = `${tweet.text}${mediaUrl ? `\n\n📸 ${mediaUrl}` : ""}\n\n🔗 ${
-    tweet.url
-  }`;
-
-  return {
-    kind: 1,
-    pubkey: nostrAccount.pubkey,
-    created_at: tweetTimestamp < now - 600 ? now : tweetTimestamp,
-    tags: [
-      ["r", tweet.url],
-      ["t", "toastr"],
-      ["client", "twitter"],
-    ],
-    // content: `${tweet.text}\n\n🔗 ${tweet.url}`,
-    content,
-    id: null,
-    sig: null,
-  };
+function savePostedLog(postedMap) {
+  const arr = Array.from(postedMap.values());
+  fs.writeFileSync(LOG_FILE, JSON.stringify(arr, null, 2));
 }
 
 async function runBot() {
@@ -137,7 +68,7 @@ async function runBot() {
       tweet?.card
     ) {
       console.log(
-        `⏩ Skipping manually reply/retweet/media/language: ${tweet.id}`
+        `⏩ Skipping Intentionally reply/retweet/media/language: ${tweet.id}`
       );
       continue;
     }
@@ -148,9 +79,6 @@ async function runBot() {
       continue;
     }
 
-    console.log("🔴🔴🔴🔴🔴 tweet from Apify 🔴🔴🔴🔴");
-    fs.appendFileSync(My_LOG_FILE, JSON.stringify(tweet, null, 2) + "\n");
-
     const handle = tweet.author?.userName;
     const profileData = {
       name: tweet.author?.name,
@@ -159,18 +87,27 @@ async function runBot() {
 
     const nostrAccount = createNostrAccount(handle, profileData);
     await publishProfileIfNotExists(nostrAccount, RELAY_URL);
-    const event = buildNostrNote(tweet, nostrAccount);
+    const event = buildNostrNote(tweet, nostrAccount.pubkey);
     event.id = getEventHash(event);
     event.sig = getSignature(event, nostrAccount.privkey);
 
     try {
-      await publishToRelay(event);
-      postedLog.add(tweetId);
+      await publishToRelay(event, RELAY_URL);
+      postedLog.set(tweetId, {
+        tweetId,
+        eventId: event.id,
+        pubkey: nostrAccount.pubkey,
+        privkey: nostrAccount.privkey,
+        version: VERSION,
+        flag: 0
+      });
+
+      fs.appendFileSync(TWEETS_LOG_FILE, JSON.stringify(tweet) + "\n");
+
     } catch (err) {
       console.error(`❌ Failed to post tweet ${tweetId}:`, err);
     }
   }
-
   savePostedLog(postedLog);
 
   isJobRunning = false;

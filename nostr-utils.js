@@ -113,8 +113,98 @@ async function publishProfileIfNotExists(account, relayUrl) {
   }
 }
 
+/**
+ * Publish event to a relay.
+ */
+async function publishToRelay(event, relayUrl) {
+  const relay = relayInit(relayUrl);
+  return new Promise(async (resolve, reject) => {
+    try {
+      await relay.connect();
+
+      relay.on("error", (err) => {
+        console.error("❌ Relay connection failed:", err.message);
+        reject(err);
+      });
+
+      relay.on("connect", async () => {
+        console.log(`🔌 Connected to ${relayUrl}`);
+        await relay.publish(event);
+        console.log(`🚀 Published: ${event.content.slice(0, 50)}...`);
+        setTimeout(() => {
+          relay.close();
+          resolve();
+        }, 1500);
+      });
+
+      setTimeout(() => {
+        relay.close();
+        reject(new Error("Timeout"));
+      }, 5000);
+    } catch (e) {
+      console.error("❌ Unexpected error:", e);
+      reject(e);
+    }
+  });
+}
+
+/**
+ * Build Nostr event.
+ */
+function buildNostrNote(tweet, pubkey) {
+  const tweetTimestamp = Math.floor(new Date(tweet.createdAt).getTime() / 1000);
+  const now = Math.floor(Date.now() / 1000);
+  let mediaUrl = null;
+  if (
+    tweet.extendedEntities &&
+    Array.isArray(tweet.extendedEntities.media) &&
+    tweet.extendedEntities.media.length > 0
+  ) {
+    const media = tweet.extendedEntities.media[0];
+
+    if (media.type === "photo" && media.media_url_https) {
+      mediaUrl = media.media_url_https;
+    }
+
+    if (
+      (media.type === "video" || media.type === "animated_gif") &&
+      media.video_info &&
+      Array.isArray(media.video_info.variants)
+    ) {
+      const mp4 = media.video_info.variants
+        .filter((v) => v.content_type === "video/mp4")
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      if (mp4?.url) {
+        mediaUrl = mp4.url;
+      }
+    }
+  }
+
+  const content = `${tweet.text}${mediaUrl ? `\n\n📸 ${mediaUrl}` : ""}\n\n🔗 ${
+    tweet.url
+  }`;
+
+  return {
+    kind: 1,
+    pubkey,
+    created_at: tweetTimestamp < now - 600 ? now : tweetTimestamp,
+    tags: [
+      ["r", tweet.url],
+      ["t", "toastr"],
+      ["client", "twitter"],
+    ],
+    // content: `${tweet.text}\n\n🔗 ${tweet.url}`,
+    content,
+    id: null,
+    sig: null,
+  };
+}
+
+
 module.exports = {
   createNostrAccount,
   getAllAccounts,
   publishProfileIfNotExists,
+  publishToRelay,
+  buildNostrNote
 };

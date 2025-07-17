@@ -94,8 +94,8 @@ async function fetchTweetsFromTwitterAPI(concurrency = 5) {
 
       const now = new Date();
       const lastFetched = getLatestTime(influencer) || new Date(now.getTime() - 60 * 60 * 1000);
-      const since = toTwitterUTCFormat(lastFetched);
-
+      // const since = toTwitterUTCFormat(lastFetched);
+const since = "2025-07-13_05:36:06_UTC";
       const tweets = await fetchAllTweets(influencer, since, i);
       console.log(`✅ [${i + 1}] Got ${tweets.length} tweets for ${influencer}`);
 
