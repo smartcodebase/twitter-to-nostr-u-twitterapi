@@ -16,7 +16,7 @@ async function fetchAllTweets(influencer, since, i) {
   let nextCursor = null;
 
   while (hasNextPage) {
-    const baseParams = `queryType=Latest&query=${encodeURIComponent(`from:${influencer} since:${since}`)}`
+    const baseParams = `queryType=Latest&query=${encodeURIComponent(`from:${influencer} since:${since} -filter:replies -filter:retweets`)}`
     + (nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : "");
 
     const url = `${TWITTER_API__URL}?${baseParams}`;
@@ -94,8 +94,7 @@ async function fetchTweetsFromTwitterAPI(concurrency = 5) {
 
       const now = new Date();
       const lastFetched = getLatestTime(influencer) || new Date(now.getTime() - 60 * 60 * 1000);
-      // const since = toTwitterUTCFormat(lastFetched);
-const since = "2025-07-13_05:36:06_UTC";
+      const since = toTwitterUTCFormat(lastFetched);
       const tweets = await fetchAllTweets(influencer, since, i);
       console.log(`✅ [${i + 1}] Got ${tweets.length} tweets for ${influencer}`);
 
@@ -110,6 +109,16 @@ const since = "2025-07-13_05:36:06_UTC";
   const allTweets = all.flat();
 
   console.log(`🎯 Total tweets fetched: ${allTweets.length}`);
+
+  // const fs = require("fs");
+  // const path = require("path");
+
+  // const TMP_LOG_FILE = path.join(__dirname, "tmp-logs/fetched-tweets-log.json");
+  // if (!fs.existsSync("tmp-logs")) fs.mkdirSync("tmp-logs");
+  // if (!fs.existsSync(TMP_LOG_FILE)) fs.writeFileSync(TMP_LOG_FILE, "[]");
+  // fs.writeFileSync(TMP_LOG_FILE, JSON.stringify(allTweets, null, 2));
+
+
   return allTweets;
 }
 

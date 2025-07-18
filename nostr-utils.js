@@ -180,7 +180,7 @@ function buildNostrNote(tweet, pubkey) {
     }
   }
 
-  const content = `${tweet.text}${mediaUrl ? `\n\n📸 ${mediaUrl}` : ""}\n\n🔗 ${
+  const content = `${tweet.text}${mediaUrl ? `\n\n ${mediaUrl}` : ""}\n\n ${
     tweet.url
   }`;
 
